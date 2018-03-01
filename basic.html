@@ -23,6 +23,27 @@
     <script src="bower_components/three.js/examples/js/postprocessing/ShaderPass.js"></script>
     <script src="bower_components/three.js/examples/js/shaders/CopyShader.js"></script>
 
+    <!-- SHADER CODE -->
+    <script id="vertexShader" type="x-shader/x-vertex">
+        varying vec2 vUv;
+
+        void main() {
+            vUv = uv;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+    </script>
+
+    <script id="fragmentShader" type="x-shader/x-vertex">
+        uniform sampler2D tDiffuse;
+        varying vec2 vUv;
+
+        void main() {
+            vec4 color = texture2D(tDiffuse, vUv);
+            gl_FragColor = color;
+        }
+    </script>
+    <!-- END SHADER CODE-->
+
 	<script>
 
 		var camera, camera_control, scene, renderer, stats;
@@ -76,7 +97,18 @@
             fxComposer.renderTarget2.texture.format = fxComposer.renderTarget1.texture.format = THREE.RGBAFormat;
 
             basicPass = new THREE.RenderPass(scene, camera);
-            basicPass.renderToScreen = true;
+        
+            var customShader = new THREE.ShaderMaterial({
+                uniforms: {
+                    tDiffuse: { type: "t", value: null}
+                },
+                vertexShader: document.getElementById('vertexShader').textContent,
+                fragmentShader: document.getElementById('fragmentShader').textContent
+            });
+
+            var customPass = new THREE.ShaderPass(customShader);
+            customPass.renderToScreen = true;
+            fxComposer.addPass(customPass);
 
             
 
@@ -108,22 +140,9 @@
 
 		function animate() {
             fxComposer.render();
-			//renderer.render( scene, camera );
 			camera_control.update();
 			requestAnimationFrame( animate );
 			stats.update();
-		}
-
-		function addCube() {
-			var cubeGeometry = new THREE.CubeGeometry(1, 1, 1);
-			var cubeMaterial = new THREE.MeshPhongMaterial();
-			var cubeTexture = new textureLoader.load("assets/textures/crate.png");
-			cubeMaterial.map = cubeTexture;
-
-			var cube = new THREE.Mesh(cubeGeometry, cubeMaterial);
-			cube.position.set(0, 0, 0);
-						
-			scene.add(cube);
 		}
 
 </script>
