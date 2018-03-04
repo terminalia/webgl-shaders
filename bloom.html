@@ -120,11 +120,18 @@
 
     <script id="fragmentShaderAdditive" type="x-shader/x-vertex">
         uniform sampler2D tDiffuse;
+        uniform sampler2D tGlow;
+        uniform float tExposure;
+
         varying vec2 vUv;
 
         void main() {
-            vec4 color = texture2D(tDiffuse, vUv);
-            gl_FragColor = color;
+            const float gamma = 2.2;
+            vec3 color = texture2D(tDiffuse, vUv).rgb;
+            vec3 color2 = texture2D(tGlow, vUv).rgb;
+            color += color2;
+            vec3 result = pow(color, vec3(1.0 / gamma));
+            gl_FragColor = vec4(result, 1.0) * tExposure;
         }
     </script>
     <!-- END SHADER CODE-->
@@ -132,7 +139,7 @@
 	<script>
 
 		var camera, camera_control, scene, renderer, stats;
-		var textureLoader, fxComposer, objLoader;
+		var textureLoader, fxComposer, finalComposer, objLoader, renderTarget;
         var basicPass;
 
 		init();
@@ -151,6 +158,7 @@
 
 			textureLoader = new THREE.TextureLoader();
             objLoader = new THREE.OBJLoader();
+            
 
 			//###################################################
 			// SCENE SETUP
@@ -158,7 +166,7 @@
 			scene = new THREE.Scene();
 
 			//Setup the camera
-			camera = new THREE.PerspectiveCamera( 70, window.innerWidth / window.innerHeight, 1, 10000 );
+			camera = new THREE.PerspectiveCamera( 70, window.innerWidth / window.innerHeight, .1, 10000 );
 			camera.position.z = 5;
 
 			//Add controls to the camera
@@ -189,19 +197,26 @@
                 
                 scene.add(loadedMesh);
             });
+
+            
             
             //###################################################
 			// SHADERS
 			//###################################################
-            fxComposer = new THREE.EffectComposer(renderer);
+
+            var renderTargetParameters = { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, format: THREE.RGBAFormat, stencilBufer: false };
+            renderTarget = new THREE.WebGLRenderTarget(window.innerWidth, window.innerHeight, renderTargetParameters); 
+
+            fxComposer = new THREE.EffectComposer(renderer, renderTarget);
             fxComposer.renderTarget2.texture.format = fxComposer.renderTarget1.texture.format = THREE.RGBAFormat;
+            finalComposer = new THREE.EffectComposer(renderer);
+            finalComposer.renderTarget2.texture.format = finalComposer.renderTarget1.texture.format = THREE.RGBAFormat;
 
             basicPass = new THREE.RenderPass(scene, camera);
-        
             var brightShader = new THREE.ShaderMaterial({
                 uniforms: {
                     tDiffuse: { type: "t", value: null},
-                    tBrightThreshold: { value: 0.9 }
+                    tBrightThreshold: { value: 0.8 }
                 },
                 vertexShader: document.getElementById('vertexShaderBright').textContent,
                 fragmentShader: document.getElementById('fragmentShaderBright').textContent
@@ -234,13 +249,29 @@
             });
 
             var vBlurPass = new THREE.ShaderPass(vBlurShader);
-            vBlurPass.renderToScreen = true;
+
+            var renderPass = new THREE.RenderPass(scene, camera);
+            var finalShader = new THREE.ShaderMaterial({
+                uniforms: {
+                    tDiffuse: { value: null},
+                    tGlow: { value: fxComposer.renderTarget1.texture },
+                    tExposure: { value: 1 }
+                },
+                vertexShader: document.getElementById('vertexShaderAdditive').textContent,
+                fragmentShader: document.getElementById('fragmentShaderAdditive').textContent
+            });
+            var finalPass = new THREE.ShaderPass(finalShader);
+            finalPass.renderToScreen = true;
             
             
             fxComposer.addPass(basicPass);
             fxComposer.addPass(brightPass);
             fxComposer.addPass(hBlurPass);
             fxComposer.addPass(vBlurPass);
+            
+            finalComposer.addPass(basicPass);
+            finalComposer.addPass(finalPass);
+
 
 
 
@@ -275,6 +306,7 @@
 
 		function animate() {
             fxComposer.render();
+            finalComposer.render();
 			camera_control.update();
 			requestAnimationFrame( animate );
 			stats.update();

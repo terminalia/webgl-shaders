@@ -101,7 +101,7 @@
 	<script>
 
 		var camera, camera_control, scene, renderer, stats;
-		var textureLoader, fxComposer;
+		var textureLoader, fxComposer, finalCompose;
         var basicPass;
 
 		init();
@@ -157,10 +157,6 @@
                 side: THREE.BackSide
             });
             
-            var uniforms = THREE.UniformsUtils.merge([
-                //THREE.UniformsLib['lights'],
-                
-            ]);
             var reflectionShader = new THREE.ShaderMaterial({
                 uniforms: {
                     tDiffuse: { value: pigTexture},
