@@ -23,9 +23,8 @@
     <script src="bower_components/three.js/examples/js/postprocessing/RenderPass.js"></script>
     <script src="bower_components/three.js/examples/js/postprocessing/ShaderPass.js"></script>
     <script src="bower_components/three.js/examples/js/shaders/CopyShader.js"></script>
-    
 
-    <!-- CUSTOM SHADER CODE Made by L. Zanconi -->
+    <!-- SHADER CODE -->
     <script id="vertexShader" type="x-shader/x-vertex">
         varying vec2 vUv;
 
@@ -45,55 +44,87 @@
         }
     </script>
 
-    <script id="vertexShaderCubeMap" type="x-shader/x-vertex">
-        varying vec3 vTexCoord;
-
-        void main() {
-            vTexCoord = position;
-            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-        }
-    </script>
-
-    <script id="fragmentShaderCubeMap" type="x-shader/x-vertex">
-        uniform samplerCube tCube;
-        varying vec3 vTexCoord;
-        
-        void main() {
-            vec4 color = textureCube(tCube, vTexCoord);
-            gl_FragColor = color;
-        }
-    </script>
-    
-    <script id="vertexShaderReflection" type="x-shader/x-vertex">
-        varying vec3 vNormal;
-        varying vec3 vPosition;
+    <script id="vertexShaderBright" type="x-shader/x-vertex">
         varying vec2 vUv;
 
         void main() {
             vUv = uv;
-            vNormal = normalMatrix *normal;
-            vPosition = vec3(modelMatrix * vec4(position, 1.0));
             gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
         }
-
-        
     </script>
 
-    <script id="fragmentShaderReflection" type="x-shader/x-vertex">
+    <script id="fragmentShaderBright" type="x-shader/x-vertex">
         uniform sampler2D tDiffuse;
-        uniform samplerCube tCube;
-        uniform vec3 tCameraPos;
+        uniform float tBrightThreshold;
+        varying vec2 vUv;
+        varying vec4 brightColor;
 
-        varying vec3 vNormal;
-        varying vec3 vPosition;
+        void main() {
+            vec3 luminanceVector = vec3(0.2125, 0.7154, 0.0721);
+            vec4 color = texture2D(tDiffuse, vUv);
+            float brightness = dot(color.xyz, luminanceVector);
+            brightness = max(0.0, brightness - tBrightThreshold);
+            color.xyz *= sign(brightness);
+            color.a = 1.0;
+            gl_FragColor = color;
+        }
+    </script>
+
+    <script id="vertexShaderBlur" type="x-shader/x-vertex">
+        varying vec2 vUv;
+        
+        void main() {
+            vUv = uv;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+    </script>
+
+    <script id="fragmentShaderBlur" type="x-shader/x-vertex">
+        precision mediump float;
+
+        uniform sampler2D tDiffuse;
+        uniform bool tHorizontal;
+        uniform float tWeights[5]; 
+        uniform float tTextureSize;
+
         varying vec2 vUv;
 
         void main() {
-            vec3 I = normalize(vPosition - tCameraPos);
-            vec3 R = reflect(I, normalize(vNormal));
-            vec4 color = vec4(textureCube(tCube, R).rgb, 1.0);
-            vec4 color2 = texture2D(tDiffuse, vUv);
-            gl_FragColor = vec4(mix(color.rgb, color2.rgb, 0.3), 1) ;
+            float texelSize = 1.0 / tTextureSize;
+            vec3 result = texture2D(tDiffuse, vUv).rgb * tWeights[0];
+            if (tHorizontal) {
+                for(int i = 1; i < 5; ++i) {
+                    result += texture2D(tDiffuse, vUv + vec2(texelSize * float(i), 0.0)).rgb * tWeights[i];
+                    result += texture2D(tDiffuse, vUv - vec2(texelSize * float(i), 0.0)).rgb * tWeights[i];
+                }
+            }
+            else {
+                for (int i=1; i<5; i++) {
+                    result += texture2D(tDiffuse, vUv + vec2(0.0, texelSize * float(i))).rgb * tWeights[i];
+                    result += texture2D(tDiffuse, vUv - vec2(0.0, texelSize * float(i))).rgb * tWeights[i];
+                }
+            }
+            vec4 color = texture2D(tDiffuse, vUv);
+            gl_FragColor = vec4(result, 1.0);
+        }
+    </script>
+
+    <script id="vertexShaderAdditive" type="x-shader/x-vertex">
+        varying vec2 vUv;
+
+        void main() {
+            vUv = uv;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+    </script>
+
+    <script id="fragmentShaderAdditive" type="x-shader/x-vertex">
+        uniform sampler2D tDiffuse;
+        varying vec2 vUv;
+
+        void main() {
+            vec4 color = texture2D(tDiffuse, vUv);
+            gl_FragColor = color;
         }
     </script>
     <!-- END SHADER CODE-->
@@ -101,7 +132,7 @@
 	<script>
 
 		var camera, camera_control, scene, renderer, stats;
-		var textureLoader, fxComposer;
+		var textureLoader, fxComposer, objLoader;
         var basicPass;
 
 		init();
@@ -115,11 +146,11 @@
 			renderer.setPixelRatio( window.devicePixelRatio );
 			//renderer.setClearColor(new THREE.Color('rgb(98, 166, 189)', 1))
 			renderer.setSize( window.innerWidth, window.innerHeight );
+            renderer.toneMapping = THREE.LinearToneMapping;
 			document.body.appendChild( renderer.domElement );
 
-            textureLoader = new THREE.TextureLoader();
+			textureLoader = new THREE.TextureLoader();
             objLoader = new THREE.OBJLoader();
-
 
 			//###################################################
 			// SCENE SETUP
@@ -127,7 +158,7 @@
 			scene = new THREE.Scene();
 
 			//Setup the camera
-			camera = new THREE.PerspectiveCamera( 70, window.innerWidth / window.innerHeight, 0.1, 10000 );
+			camera = new THREE.PerspectiveCamera( 70, window.innerWidth / window.innerHeight, 1, 10000 );
 			camera.position.z = 5;
 
 			//Add controls to the camera
@@ -142,49 +173,22 @@
 	
 			//###################################################
 			// ASSETS LOADING
-            //###################################################
-    
-            var cubeMap = createCubeMapTexture('assets/textures/cubemaps/pisa/', '.jpg');
+			//###################################################
             var pigTexture = textureLoader.load('assets/textures/pig.png');
+            var pigTextureSpec = textureLoader.load('assets/textures/pig_specular.png');
+            console.log(pigTexture);
 
-            var customCubeMapShader = new THREE.ShaderMaterial({
-                uniforms: {
-                    tCube: { value: cubeMap}
-                },
-                vertexShader: document.getElementById('vertexShaderCubeMap').textContent,
-                fragmentShader: document.getElementById('fragmentShaderCubeMap').textContent,
-                depthWrite: false,
-                side: THREE.BackSide
-            });
-            
-            var uniforms = THREE.UniformsUtils.merge([
-                //THREE.UniformsLib['lights'],
-                
-            ]);
-            var reflectionShader = new THREE.ShaderMaterial({
-                uniforms: {
-                    tDiffuse: { value: pigTexture},
-                    tCameraPos: { value: camera.position },
-                    tCube: { value: cubeMap }
-                },
-                vertexShader: document.getElementById('vertexShaderReflection').textContent,
-                fragmentShader: document.getElementById('fragmentShaderReflection').textContent,
-                lights: false
-            });
+            var material = new THREE.MeshPhongMaterial({map: pigTexture, specular: 0xffffff, shininess: 100});
 
-            var skyCube = new THREE.Mesh(new THREE.BoxGeometry(105, 105, 105), customCubeMapShader);
-            scene.add(skyCube);
-            
-            objLoader.load('assets/models/pig.obj', function(loadedMesh) {
+			objLoader.load('assets/models/pig.obj', function(loadedMesh) {
                 loadedMesh.traverse(function(child) {
                     if (child instanceof THREE.Mesh) {
-                        child.material = reflectionShader;
+                        child.material = material;
                     }
                 });
                 
                 scene.add(loadedMesh);
             });
-
             
             //###################################################
 			// SHADERS
@@ -194,19 +198,56 @@
 
             basicPass = new THREE.RenderPass(scene, camera);
         
-            var customShader = new THREE.ShaderMaterial({
+            var brightShader = new THREE.ShaderMaterial({
                 uniforms: {
                     tDiffuse: { type: "t", value: null},
-                    tCube: { value: cubeMap }
+                    tBrightThreshold: { value: 0.9 }
                 },
-                vertexShader: document.getElementById('vertexShader').textContent,
-                fragmentShader: document.getElementById('fragmentShader').textContent
+                vertexShader: document.getElementById('vertexShaderBright').textContent,
+                fragmentShader: document.getElementById('fragmentShaderBright').textContent
             });
 
-            var customPass = new THREE.ShaderPass(customShader);
-            customPass.renderToScreen = true;
-            fxComposer.addPass(customPass);
+            var brightPass = new THREE.ShaderPass(brightShader);
+            var weights = [0.227027, 0.1945946, 0.1216216, 0.054054, 0.016216];
+            var hBlurShader = new THREE.ShaderMaterial({
+                uniforms: {
+                    tDiffuse: { value: null},
+                    tHorizontal: { value: 1},
+                    tWeights: { value: weights },
+                    tTextureSize: { value: 1024 }
+                },
+                vertexShader: document.getElementById('vertexShaderBlur').textContent,
+                fragmentShader: document.getElementById('fragmentShaderBlur').textContent
+            });
+
+            var hBlurPass = new THREE.ShaderPass(hBlurShader);
+
+            var vBlurShader = new THREE.ShaderMaterial({
+                uniforms: {
+                    tDiffuse: { value: null},
+                    tHorizontal: { value: 0},
+                    tWeights: { value: weights },
+                    tTextureSize: { value: 1024 }
+                },
+                vertexShader: document.getElementById('vertexShaderBlur').textContent,
+                fragmentShader: document.getElementById('fragmentShaderBlur').textContent
+            });
+
+            var vBlurPass = new THREE.ShaderPass(vBlurShader);
+            vBlurPass.renderToScreen = true;
+            
+            
             fxComposer.addPass(basicPass);
+            fxComposer.addPass(brightPass);
+            fxComposer.addPass(hBlurPass);
+            fxComposer.addPass(vBlurPass);
+
+
+
+            
+            
+            renderer.gammaInput = true;
+            renderer.gammaOutput = true;
 
 			//###################################################
 			// GUI SETUP
@@ -223,22 +264,6 @@
 			//###################################################
 			window.addEventListener( 'resize', onWindowResize, false );
 		}
-
-        function createCubeMapTexture(path, format) {
-            var urls = [
-                path + 'px' + format, 
-                path + 'nx' + format,
-                path + 'py' + format, 
-                path + 'ny' + format,
-                path + 'pz' + format, 
-                path + 'nz' + format
-            ];
-
-            var cubeMap = new THREE.CubeTextureLoader().load(urls);
-            cubeMap.format = THREE.RGBFormat;
-
-            return cubeMap;
-        }
 
 		function onWindowResize() {
 
