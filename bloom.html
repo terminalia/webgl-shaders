@@ -126,12 +126,13 @@
         varying vec2 vUv;
 
         void main() {
-            const float gamma = 2.2;
+            const float gamma = 1.2;
             vec3 color = texture2D(tDiffuse, vUv).rgb;
             vec3 color2 = texture2D(tGlow, vUv).rgb;
             color += color2;
             vec3 result = pow(color, vec3(1.0 / gamma));
-            gl_FragColor = vec4(result, 1.0) * tExposure;
+            gl_FragColor = vec4(color + vec3(0.5, 0.75, 1.0) * color2 * 2.0, 1.0);
+            //gl_FragColor = vec4(color2, 1.0);
         }
     </script>
     <!-- END SHADER CODE-->
@@ -176,7 +177,7 @@
             scene.add(ambientLight);
 
             var directionalLight = new THREE.DirectionalLight( 0xffffff, 1.0 );
-            directionalLight.position = new THREE.Vector3(0, 0, 3);
+            directionalLight.position = new THREE.Vector3(0, 3, 3);
             scene.add( directionalLight );
 	
 			//###################################################
@@ -216,7 +217,7 @@
             var brightShader = new THREE.ShaderMaterial({
                 uniforms: {
                     tDiffuse: { type: "t", value: null},
-                    tBrightThreshold: { value: 0.8 }
+                    tBrightThreshold: { value: .9 }
                 },
                 vertexShader: document.getElementById('vertexShaderBright').textContent,
                 fragmentShader: document.getElementById('fragmentShaderBright').textContent
@@ -266,19 +267,16 @@
             
             fxComposer.addPass(basicPass);
             fxComposer.addPass(brightPass);
+            for (var i=0; i<5; i++) {
             fxComposer.addPass(hBlurPass);
             fxComposer.addPass(vBlurPass);
+            }
             
             finalComposer.addPass(basicPass);
             finalComposer.addPass(finalPass);
 
-
-
-
-            
-            
-            renderer.gammaInput = true;
-            renderer.gammaOutput = true;
+            //renderer.gammaInput = true;
+            //renderer.gammaOutput = true;
 
 			//###################################################
 			// GUI SETUP
