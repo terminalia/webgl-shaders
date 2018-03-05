@@ -44,13 +44,15 @@
         }
     </script>
     <script id="vertexShaderMetal" type="x-shader/x-vertex">
-        varying vec4 mvPosition;
+        varying vec3 vPosition;
+        varying vec3 vNormal;
         varying vec3 worldNormal;
         varying vec3 cameraToVertex;
         varying vec2 vUv;
 
         void main() {
-            mvPosition = modelViewMatrix * vec4(position, 1.0);
+            vPosition = (modelMatrix * vec4(position, 1.0 )).xyz;
+            vNormal = normalMatrix * normal;
             worldNormal = normal;
             vec4 worldPosition = modelMatrix * vec4(position, 1.0);
             cameraToVertex = worldPosition.xyz - cameraPosition;
@@ -60,25 +62,43 @@
     </script>
 
     <script id="fragmentShaderMetal" type="x-shader/x-vertex">
-        uniform sampler2D tDiffuse;
+        uniform sampler2D diffuseMap;
         uniform vec3 paintColor1;
         uniform vec3 paintColor2;
         uniform vec3 paintColor3;
-        varying vec4 mvPosition;
+        varying vec3 vPosition;
+        varying vec3 vNormal;
         varying vec3 worldNormal;
         varying vec3 cameraToVertex;
         varying vec2 vUv;
+        uniform vec3 pointLightColor[NUM_POINT_LIGHTS];
+        uniform vec3 pointLightPosition[NUM_POINT_LIGHTS];
+        uniform float pointLightDistance[NUM_POINT_LIGHTS];
+
+        struct PointLight {
+            vec3 position;
+            vec3 color;
+        };
+        uniform PointLight pointLights[ NUM_POINT_LIGHTS ];
 
         void main() {
+            vec4 addedLights = vec4(0.1, 0.1, 0.1, 1.0);
+            for(int l = 0; l < NUM_POINT_LIGHTS; l++) {
+                vec3 adjustedLight = pointLights[l].position + cameraPosition;
+                vec3 lightDirection = normalize(vPosition - adjustedLight);
+                addedLights.rgb += clamp(dot(-lightDirection, vNormal), 0.0, 1.0) * pointLights[l].color;
+            }
+
             float fFresnel = dot(normalize(-cameraToVertex), worldNormal);
             vec3 reflection = 2.0 * worldNormal * fFresnel - normalize(-cameraToVertex);
-            vec4 color = texture2D(tDiffuse, vUv);
+
             float  fEnvContribution = 1.0 - 0.5 * fFresnel;
             float  fFresnelSq = fFresnel * fFresnel;
             vec3 paintColor = fFresnel   * paintColor1   +
                     fFresnelSq * paintColor2 +
                     fFresnelSq * fFresnelSq * paintColor3;
-            gl_FragColor = vec4(paintColor, 1.0);
+            vec4 color = vec4(1, 1, 0, 1);
+            gl_FragColor = mix(vec4(paintColor.x, paintColor.y, paintColor.z, 1.0), addedLights, addedLights);
         }
     </script>
     <!-- END SHADER CODE-->
@@ -104,7 +124,7 @@
 
 			textureLoader = new THREE.TextureLoader();
             objLoader = new THREE.OBJLoader();
-
+            var carTexture = textureLoader.load('assets/textures/Body_2048_update2.jpg');
 			//###################################################
 			// SCENE SETUP
 			//###################################################
@@ -120,29 +140,34 @@
 			var ambientLight = new THREE.AmbientLight(0xfaebd7);
             //scene.add(ambientLight);
 
-            var directionalLight = new THREE.DirectionalLight( 0xff3344, 1.0 );
-            directionalLight.position = new THREE.Vector3(0, 3, 3);
-            scene.add( directionalLight );
+            var pointLight1 = new THREE.PointLight(0xfaebd7);
+            var pointLightHelper = new THREE.PointLightHelper(pointLight1, 1);
+            scene.add(pointLightHelper)
+            pointLight1.position.y = 3;
+            pointLight1.position.z = 3;
+            scene.add(pointLight1);
 	
 			//###################################################
 			// ASSETS LOADING
 			//###################################################
-            var uniforms = THREE.UniformsUtils.merge([
-                THREE.UniformsLib['lights'],
-                {
-                    paintColor1: { type: "c", value: new THREE.Color(0x660059) },
-                    paintColor2: { type: "c", value: new THREE.Color(0x990000) },
-                    paintColor3: { type: "c", value: new THREE.Color(0xFFFF00) }
-                }
-            ]);
+            
+            var uniforms = THREE.UniformsUtils.merge(
+                [
+                    THREE.UniformsLib['lights'],
+                    {
+                        diffuseMap: { value: carTexture },
+                        paintColor1: { type: "c", value: new THREE.Color(0x660059) },
+                        paintColor2: { type: "c", value: new THREE.Color(0x990000) },
+                        paintColor3: { type: "c", value: new THREE.Color(0xFFFF00) }
+                    }
+                ]
+            );
             var carMaterial = new THREE.ShaderMaterial({
                 uniforms: uniforms,
                 vertexShader: document.getElementById('vertexShaderMetal').textContent,
                 fragmentShader: document.getElementById('fragmentShaderMetal').textContent,
                 lights: true
-                
             });
-            carMaterial.extensions.derivatives = true;
 
 			objLoader.load('assets/models/Body2.obj', function(loadedMesh) {
                 loadedMesh.traverse(function(child) {
