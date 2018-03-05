@@ -62,15 +62,20 @@
     </script>
 
     <script id="fragmentShaderMetal" type="x-shader/x-vertex">
-        uniform sampler2D diffuseMap;
-        uniform vec3 paintColor1;
-        uniform vec3 paintColor2;
-        uniform vec3 paintColor3;
         varying vec3 vPosition;
         varying vec3 vNormal;
         varying vec3 worldNormal;
         varying vec3 cameraToVertex;
         varying vec2 vUv;
+
+        uniform sampler2D uDiffuseMap;
+        uniform samplerCube uEnvMap;
+        uniform vec3 uPaintColor1;
+        uniform vec3 uPaintColor2;
+        uniform vec3 uPaintColor3;
+        uniform float uGlossyLevel;
+        uniform float uBrightnessFactor;
+        
         uniform vec3 pointLightColor[NUM_POINT_LIGHTS];
         uniform vec3 pointLightPosition[NUM_POINT_LIGHTS];
         uniform float pointLightDistance[NUM_POINT_LIGHTS];
@@ -94,11 +99,13 @@
 
             float  fEnvContribution = 1.0 - 0.5 * fFresnel;
             float  fFresnelSq = fFresnel * fFresnel;
-            vec3 paintColor = fFresnel   * paintColor1   +
-                    fFresnelSq * paintColor2 +
-                    fFresnelSq * fFresnelSq * paintColor3;
-            vec4 color = vec4(1, 1, 0, 1);
-            gl_FragColor = mix(vec4(paintColor.x, paintColor.y, paintColor.z, 1.0), addedLights, addedLights);
+            vec3 paintColor = fFresnel   * uPaintColor1   +
+                    fFresnelSq * uPaintColor2 +
+                    fFresnelSq * fFresnelSq * uPaintColor3;
+            vec4 color = texture2D(uDiffuseMap, vUv);
+            color = color + vec4(paintColor, 1.0);
+            gl_FragColor = mix(vec4(color.x, color.y, color.z, 1.0), addedLights, addedLights);
+            //gl_FragColor = color;
         }
     </script>
     <!-- END SHADER CODE-->
@@ -124,7 +131,7 @@
 
 			textureLoader = new THREE.TextureLoader();
             objLoader = new THREE.OBJLoader();
-            var carTexture = textureLoader.load('assets/textures/Body_2048_update2.jpg');
+            
 			//###################################################
 			// SCENE SETUP
 			//###################################################
@@ -140,7 +147,7 @@
 			var ambientLight = new THREE.AmbientLight(0xfaebd7);
             //scene.add(ambientLight);
 
-            var pointLight1 = new THREE.PointLight(0xfaebd7);
+            var pointLight1 = new THREE.PointLight(0xfaebd7, 0.5, 100);
             var pointLightHelper = new THREE.PointLightHelper(pointLight1, 1);
             scene.add(pointLightHelper)
             pointLight1.position.y = 3;
@@ -150,18 +157,38 @@
 			//###################################################
 			// ASSETS LOADING
 			//###################################################
-            
+            var carTexture = textureLoader.load('assets/textures/Body_2048_update2.jpg');
+            var cubeMap = createCubeMapTexture('assets/textures/cubemaps/pisa/', '.jpg');
+            var skyshader = THREE.ShaderLib[ "cube" ];
+            skyshader.uniforms[ "tCube" ].value = cubeMap;
+
+            var skymaterial = new THREE.ShaderMaterial( {
+                    fragmentShader: skyshader.fragmentShader,
+                    vertexShader: skyshader.vertexShader,
+                    uniforms: skyshader.uniforms,
+                    depthWrite: false,
+                    side: THREE.BackSide
+                } 
+            );
+
+            sky = new THREE.Mesh( new THREE.BoxGeometry( 50, 50, 50 ), skymaterial );
+            scene.add( sky );
+
             var uniforms = THREE.UniformsUtils.merge(
                 [
                     THREE.UniformsLib['lights'],
                     {
-                        diffuseMap: { value: carTexture },
-                        paintColor1: { type: "c", value: new THREE.Color(0x660059) },
-                        paintColor2: { type: "c", value: new THREE.Color(0x990000) },
-                        paintColor3: { type: "c", value: new THREE.Color(0xFFFF00) }
+                        uPaintColor1: { type: "c", value: new THREE.Color(0x660059) },
+                        uPaintColor2: { type: "c", value: new THREE.Color(0x990000) },
+                        uPaintColor3: { type: "c", value: new THREE.Color(0xFFFF00) },
+                        glossLevel: { type: "f", value: 1.0, min: 0.0, max: 5.0},
+                        brightnessFactor: {type: "f", value: 1.0, min: 0.0, max: 1.0}
                     }
                 ]
             );
+            Object.assign(uniforms, {
+                uDiffuseMap: { value: carTexture } 
+            });
             var carMaterial = new THREE.ShaderMaterial({
                 uniforms: uniforms,
                 vertexShader: document.getElementById('vertexShaderMetal').textContent,
@@ -217,7 +244,23 @@
 			// EVENTS SETUP
 			//###################################################
 			window.addEventListener( 'resize', onWindowResize, false );
-		}
+        }
+        
+        function createCubeMapTexture(path, format) {
+            var urls = [
+                path + 'px' + format, 
+                path + 'nx' + format,
+                path + 'py' + format, 
+                path + 'ny' + format,
+                path + 'pz' + format, 
+                path + 'nz' + format
+            ];
+
+            var cubeMap = new THREE.CubeTextureLoader().load(urls);
+            cubeMap.format = THREE.RGBFormat;
+
+            return cubeMap;
+        }
 
 		function onWindowResize() {
 
