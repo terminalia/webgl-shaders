@@ -96,16 +96,18 @@
 
             float fFresnel = dot(normalize(-cameraToVertex), worldNormal);
             vec3 reflection = 2.0 * worldNormal * fFresnel - normalize(-cameraToVertex);
+            vec4 reflectColor = vec4(textureCube(uEnvMap, vec3(-reflection.x, reflection.yz)).rgb, uGlossyLevel);
+            reflectColor.rgb *= uBrightnessFactor;
 
             float  fEnvContribution = 1.0 - 0.5 * fFresnel;
             float  fFresnelSq = fFresnel * fFresnel;
             vec3 paintColor = fFresnel   * uPaintColor1   +
                     fFresnelSq * uPaintColor2 +
                     fFresnelSq * fFresnelSq * uPaintColor3;
-            vec4 color = texture2D(uDiffuseMap, vUv);
-            color = color + vec4(paintColor, 1.0);
-            gl_FragColor = mix(vec4(color.x, color.y, color.z, 1.0), addedLights, addedLights);
-            //gl_FragColor = color;
+            vec4 diffuseColor = texture2D(uDiffuseMap, vUv);
+            vec4 finalColor = vec4(mix(paintColor.rgb, reflectColor.rgb, 0.3), 1);
+            //gl_FragColor = mix(vec4(finalColor.x, finalColor.y, finalColor.z, 1.0), addedLights, addedLights);
+            gl_FragColor = diffuseColor + finalColor;
         }
     </script>
     <!-- END SHADER CODE-->
@@ -181,13 +183,14 @@
                         uPaintColor1: { type: "c", value: new THREE.Color(0x660059) },
                         uPaintColor2: { type: "c", value: new THREE.Color(0x990000) },
                         uPaintColor3: { type: "c", value: new THREE.Color(0xFFFF00) },
-                        glossLevel: { type: "f", value: 1.0, min: 0.0, max: 5.0},
-                        brightnessFactor: {type: "f", value: 1.0, min: 0.0, max: 1.0}
+                        uGlossyLevel: { type: "f", value: 1.0, min: 0.0, max: 5.0},
+                        uBrightnessFactor: {type: "f", value: 1.0, min: 0.0, max: 1.0}
                     }
                 ]
             );
             Object.assign(uniforms, {
-                uDiffuseMap: { value: carTexture } 
+                uDiffuseMap: { value: carTexture },
+                uEnvMap: { value: cubeMap }
             });
             var carMaterial = new THREE.ShaderMaterial({
                 uniforms: uniforms,
