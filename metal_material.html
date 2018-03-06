@@ -109,7 +109,8 @@
             vec4 diffuseColor = texture2D(uDiffuseMap, vUv);
             vec4 finalColor = vec4(mix(paintColor.rgb, envColor.rgb, 0.3), 1);
             //gl_FragColor = mix(vec4(finalColor.x, finalColor.y, finalColor.z, 1.0), addedLights, addedLights);
-            gl_FragColor = diffuseColor * uDiffuseMapFactor + finalColor;
+            gl_FragColor =  finalColor + diffuseColor * uDiffuseMapFactor;
+            
         }
     </script>
     <!-- END SHADER CODE-->
@@ -161,7 +162,7 @@
 			//###################################################
 			// ASSETS LOADING
 			//###################################################
-            var carTexture = textureLoader.load('assets/textures/little_car_diffuse.jpg');
+            var carTexture = textureLoader.load('assets/textures/Body_2048_update2.jpg');
             var cubeMap = createCubeMapTexture('assets/textures/cubemaps/studio/', '.png');
             var skyshader = THREE.ShaderLib[ "cube" ];
             skyshader.uniforms[ "tCube" ].value = cubeMap;
@@ -200,11 +201,11 @@
                 uniforms: uniforms,
                 vertexShader: document.getElementById('vertexShaderMetal').textContent,
                 fragmentShader: document.getElementById('fragmentShaderMetal').textContent,
-                side: THREE.DoubleSide,
+                side: THREE.FrontSide,
                 lights: true
             });
 
-			objLoader.load('assets/models/little_car.obj', function(loadedMesh) {
+			objLoader.load('assets/models/Body2.obj', function(loadedMesh) {
                 loadedMesh.traverse(function(child) {
                     if (child instanceof THREE.Mesh) {
                         child.material = carMaterial;
