@@ -15,7 +15,8 @@
 <body>
 
 	<script src="bower_components/three.js/build/three.js"></script>
-	<script src="bower_components/three.js/examples/js/libs/stats.min.js"></script>
+    <script src="bower_components/three.js/examples/js/libs/stats.min.js"></script>
+    <script src="bower_components/three.js/examples/js/libs/dat.gui.min.js"></script>
     <script src="bower_components/three.js/examples/js/loaders/OBJLoader.js"></script>
     <script src="bower_components/three.js/examples/js/controls/OrbitControls.js"></script>
     <script src="bower_components/three.js/examples/js/postprocessing/EffectComposer.js"></script>
@@ -75,6 +76,7 @@
         uniform vec3 uPaintColor3;
         uniform float uGlossyLevel;
         uniform float uBrightnessFactor;
+        uniform float uDiffuseMapFactor;
         
         uniform vec3 pointLightColor[NUM_POINT_LIGHTS];
         uniform vec3 pointLightPosition[NUM_POINT_LIGHTS];
@@ -96,8 +98,8 @@
 
             float fFresnel = dot(normalize(-cameraToVertex), worldNormal);
             vec3 reflection = 2.0 * worldNormal * fFresnel - normalize(-cameraToVertex);
-            vec4 reflectColor = vec4(textureCube(uEnvMap, vec3(-reflection.x, reflection.yz)).rgb, uGlossyLevel);
-            reflectColor.rgb *= uBrightnessFactor;
+            vec4 envColor = textureCube( uEnvMap, vec3( -reflection.x, reflection.yz ), uGlossyLevel );
+            envColor.rgb *= uBrightnessFactor;
 
             float  fEnvContribution = 1.0 - 0.5 * fFresnel;
             float  fFresnelSq = fFresnel * fFresnel;
@@ -105,18 +107,18 @@
                     fFresnelSq * uPaintColor2 +
                     fFresnelSq * fFresnelSq * uPaintColor3;
             vec4 diffuseColor = texture2D(uDiffuseMap, vUv);
-            vec4 finalColor = vec4(mix(paintColor.rgb, reflectColor.rgb, 0.3), 1);
+            vec4 finalColor = vec4(mix(paintColor.rgb, envColor.rgb, 0.3), 1);
             //gl_FragColor = mix(vec4(finalColor.x, finalColor.y, finalColor.z, 1.0), addedLights, addedLights);
-            gl_FragColor = diffuseColor + finalColor;
+            gl_FragColor = diffuseColor * uDiffuseMapFactor + finalColor;
         }
     </script>
     <!-- END SHADER CODE-->
 
 	<script>
 
-		var camera, camera_control, scene, renderer, stats;
+		var camera, camera_control, scene, renderer, stats, gui;
 		var textureLoader, objLoader, fxComposer;
-        var basicPass;
+        var basicPass, carMaterial;
 
 		init();
 		animate();
@@ -140,7 +142,7 @@
 			scene = new THREE.Scene();
 
 			//Setup the camera
-			camera = new THREE.PerspectiveCamera( 70, window.innerWidth / window.innerHeight, 1, 10000 );
+			camera = new THREE.PerspectiveCamera( 45, window.innerWidth / window.innerHeight, .1, 10000 );
 			camera.position.z = 5;
 
 			//Add controls to the camera
@@ -159,8 +161,8 @@
 			//###################################################
 			// ASSETS LOADING
 			//###################################################
-            var carTexture = textureLoader.load('assets/textures/Body_2048_update2.jpg');
-            var cubeMap = createCubeMapTexture('assets/textures/cubemaps/pisa/', '.jpg');
+            var carTexture = textureLoader.load('assets/textures/little_car_diffuse.jpg');
+            var cubeMap = createCubeMapTexture('assets/textures/cubemaps/studio/', '.png');
             var skyshader = THREE.ShaderLib[ "cube" ];
             skyshader.uniforms[ "tCube" ].value = cubeMap;
 
@@ -184,7 +186,8 @@
                         uPaintColor2: { type: "c", value: new THREE.Color(0x990000) },
                         uPaintColor3: { type: "c", value: new THREE.Color(0xFFFF00) },
                         uGlossyLevel: { type: "f", value: 1.0, min: 0.0, max: 5.0},
-                        uBrightnessFactor: {type: "f", value: 1.0, min: 0.0, max: 1.0}
+                        uBrightnessFactor: {type: "f", value: 1.0, min: 0.0, max: 2.0},
+                        uDiffuseMapFactor: { type: "f", value: 0.3}
                     }
                 ]
             );
@@ -192,14 +195,16 @@
                 uDiffuseMap: { value: carTexture },
                 uEnvMap: { value: cubeMap }
             });
-            var carMaterial = new THREE.ShaderMaterial({
+
+            carMaterial = new THREE.ShaderMaterial({
                 uniforms: uniforms,
                 vertexShader: document.getElementById('vertexShaderMetal').textContent,
                 fragmentShader: document.getElementById('fragmentShaderMetal').textContent,
+                side: THREE.DoubleSide,
                 lights: true
             });
 
-			objLoader.load('assets/models/Body2.obj', function(loadedMesh) {
+			objLoader.load('assets/models/little_car.obj', function(loadedMesh) {
                 loadedMesh.traverse(function(child) {
                     if (child instanceof THREE.Mesh) {
                         child.material = carMaterial;
@@ -242,6 +247,7 @@
 			stats.domElement.style.left	= '0px';
 			stats.domElement.style.bottom	= '0px';
 			stats.update();
+            addGUI();
 
 			//###################################################
 			// EVENTS SETUP
@@ -263,6 +269,36 @@
             cubeMap.format = THREE.RGBFormat;
 
             return cubeMap;
+        }
+
+        function addGUI() {
+            gui = new dat.GUI();
+
+            var controls = new function() {
+                this.brightnessFactor = 1.0;
+                this.glossyLevel = 1.0;
+                this.diffuseMapFactor = 0.3;
+                this.paintColor1 = "#660059";
+                this.paintColor2 = "#990000";
+                this.paintColor3 = "#FFFF00";
+
+                this.updateMat = function() {
+                    carMaterial.uniforms.uBrightnessFactor.value = controls.brightnessFactor;
+                    carMaterial.uniforms.uGlossyLevel.value = controls.glossyLevel;
+                    carMaterial.uniforms.uDiffuseMapFactor.value = controls.diffuseMapFactor;
+                    carMaterial.uniforms.uPaintColor1.value = new THREE.Color(controls.paintColor1);
+                    carMaterial.uniforms.uPaintColor2.value = new THREE.Color(controls.paintColor2);
+                    carMaterial.uniforms.uPaintColor3.value = new THREE.Color(controls.paintColor3);
+                };
+            }
+
+            var materialFolder = gui.addFolder("Metal Material");
+            materialFolder.add(controls, "brightnessFactor", 0.0, 1.0).onChange(controls.updateMat);
+            materialFolder.add(controls, "glossyLevel", 0.0, 5.0).onChange(controls.updateMat);
+            materialFolder.add(controls, "diffuseMapFactor", 0.0, 1.0).onChange(controls.updateMat);
+            materialFolder.addColor(controls, "paintColor1").onChange(controls.updateMat);
+            materialFolder.addColor(controls, "paintColor2").onChange(controls.updateMat);
+            materialFolder.addColor(controls, "paintColor3").onChange(controls.updateMat);
         }
 
 		function onWindowResize() {
