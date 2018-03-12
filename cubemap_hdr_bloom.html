@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<title>WebGL Shader Test</title>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+	<style>
+		body {
+			margin: 0px;
+			background-color: #000000;
+			overflow: hidden;
+		}
+	</style>
+</head>
+<body>
+
+	<script src="bower_components/three.js/build/three.js"></script>
+	<script src="bower_components/three.js/examples/js/libs/stats.min.js"></script>
+	<script src="bower_components/three.js/examples/js/libs/dat.gui.min.js"></script>
+	<script src="bower_components/three.js/examples/js/loaders/OBJLoader.js"></script>
+    <script src="bower_components/three.js/examples/js/controls/OrbitControls.js"></script>
+    <script src="bower_components/three.js/examples/js/postprocessing/EffectComposer.js"></script>
+    <script src="bower_components/three.js/examples/js/postprocessing/MaskPass.js"></script>
+    <script src="bower_components/three.js/examples/js/postprocessing/RenderPass.js"></script>
+    <script src="bower_components/three.js/examples/js/postprocessing/ShaderPass.js"></script>
+    <script src="bower_components/three.js/examples/js/postprocessing/UnrealBloomPass.js"></script>
+	<script src="bower_components/three.js/examples/js/shaders/CopyShader.js"></script>
+    <script src="bower_components/three.js/examples/js/shaders/FXAAShader.js"></script>
+    <script src="bower_components/three.js/examples/js/shaders/ConvolutionShader.js"></script>
+    <script src="bower_components/three.js/examples/js/shaders/LuminosityHighPassShader.js"></script>
+	<script src="bower_components/three.js/examples/js/loaders/RGBELoader.js"></script>
+	<script src="bower_components/three.js/examples/js/loaders/HDRCubeTextureLoader.js"></script>
+	<script src="bower_components/three.js/examples/js/pmrem/PMREMGenerator.js"></script>
+	<script src="bower_components/three.js/examples/js/pmrem/PMREMCubeUVPacker.js"></script>
+	
+	
+	
+
+    <!-- SHADER CODE -->
+    <script id="vertexShader" type="x-shader/x-vertex">
+        varying vec2 vUv;
+
+        void main() {
+            vUv = uv;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+    </script>
+
+    <script id="fragmentShader" type="x-shader/x-vertex">
+        uniform sampler2D tDiffuse;
+        varying vec2 vUv;
+
+        void main() {
+            vec4 color = texture2D(tDiffuse, vUv);
+            gl_FragColor = color;
+        }
+	</script>
+	<script id="vertexShaderHDR" type="x-shader/x-vertex">
+        varying vec2 vUv;
+
+        void main() {
+            vUv = uv;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+    </script>
+
+    <script id="fragmentShaderHDR" type="x-shader/x-vertex">
+		uniform sampler2D tDiffuse;
+		uniform float uExposure;
+		uniform float uBrightMax;
+        varying vec2 vUv;
+
+        void main() {
+			vec4 color = texture2D(tDiffuse, vUv);
+			
+			float Y = dot(vec4(0.30, 0.59, 0.11, 0.0), color);
+			float YD = uExposure * (uExposure / uBrightMax + 1.0) / (uExposure + 1.0);
+			color *= YD;
+            gl_FragColor = color;
+        }
+    </script>
+    <!-- END SHADER CODE-->
+
+	<script>
+
+		var camera, camera_control, scene, renderer, stats, gui;
+		var textureLoader, fxComposer, exrLoader, hdrCubeMapLoader, objLoader;
+        var basicPass, bloomPass, hdrMaterial, ldrMaterial, hdrCubeRenderTarget, cubeMap;
+		var params = {
+			exposure: 0.9,
+			envMap: "LDR"
+		};
+
+		init();
+		animate();
+
+		function init() {
+			//###################################################
+			// INITIAL SETUP
+			//###################################################
+			renderer = new THREE.WebGLRenderer();
+			renderer.setPixelRatio( window.devicePixelRatio );
+			//renderer.setClearColor(new THREE.Color('rgb(98, 166, 189)', 1))
+			renderer.setSize( window.innerWidth, window.innerHeight );
+			renderer.toneMapping = THREE.LinearToneMapping;
+			document.body.appendChild( renderer.domElement );
+
+			textureLoader = new THREE.TextureLoader();
+			objLoader = new THREE.OBJLoader();
+			hdrCubeMapLoader = new THREE.HDRCubeTextureLoader();
+			//###################################################
+			// SCENE SETUP
+			//###################################################
+			scene = new THREE.Scene();
+
+			//Setup the camera
+			camera = new THREE.PerspectiveCamera( 70, window.innerWidth / window.innerHeight, .1, 10000 );
+			camera.position.z = 5;
+
+			//Add controls to the camera
+			camera_control = new THREE.OrbitControls(camera, renderer.domElement);
+			
+			var ambientLight = new THREE.AmbientLight(0xffffff);
+            //scene.add(ambientLight);
+			var pointLight1 = new THREE.PointLight(0xffffff, .5, 100);
+			pointLight1.position.y = 1;
+			pointLight1.position.z = 2;
+            var pointLightHelper = new THREE.PointLightHelper(pointLight1, 1);
+			scene.add(pointLight1);
+            scene.add(pointLightHelper);
+
+			var spotLight = new THREE.SpotLight( 0xffffff, 1 );
+			spotLight.position.set( 1, 1, 1 );
+			spotLight.angle = Math.PI / 7;
+			spotLight.penumbra = 0.8;
+			spotLight.castShadow = true;
+			var spotLightHelper = new THREE.SpotLightHelper(spotLight);
+			//scene.add( spotLight );
+			//scene.add(spotLightHelper);
+
+			//###################################################
+			// ASSETS LOADING
+			//###################################################
+			var cubeMapUrls = createCubeMapUrlsHDR('assets/textures/cubemaps/test_hdr/', '.hdr');
+			cubeMap = createCubeMapTexture('assets/textures/cubemaps/test/', '.jpg');
+			hdrCubeMapLoader.load( THREE.UnsignedByteType, cubeMapUrls, function ( hdrCubeMap ) {
+
+				var pmremGenerator = new THREE.PMREMGenerator( hdrCubeMap );
+				pmremGenerator.update( renderer );
+				var pmremCubeUVPacker = new THREE.PMREMCubeUVPacker( pmremGenerator.cubeLods );
+				pmremCubeUVPacker.update( renderer );
+
+				hdrCubeRenderTarget = pmremCubeUVPacker.CubeUVRenderTarget;
+				
+				hdrMaterial.envMap = cubeMap;
+				//hdrMaterial.envMap = hdrCubeRenderTarget.texture;
+				hdrMaterial.needsUpdate = true;
+
+				planeMaterial.emissive = new THREE.Color( 1, 1, 1 );
+				planeMaterial.emissiveMap = hdrCubeRenderTarget.texture;
+				planeMaterial.needsUpdate = true;
+			} );
+			
+			hdrMaterial = new THREE.MeshStandardMaterial({color: 0xffffff, metalness: 0.7, roughness: .3, bumpScale: 0.01 });
+			textureLoader.load('assets/textures/roughness_map.jpg', function(map) {
+				map.wrapS = THREE.RepeatWrapping;
+				map.wrapT = THREE.RepeatWrapping;
+				map.anisotropy = 4;
+				map.repeat.set( 9, 2 );
+				hdrMaterial.map = map;
+				hdrMaterial.roughnessMap = map;
+				hdrMaterial.bumpMap = map;	
+				hdrMaterial.needsUpdate = true;
+			});
+
+			var torusMesh = new THREE.Mesh( new THREE.TorusKnotGeometry( 1, .4, 150, 20 ), hdrMaterial );
+			scene.add(torusMesh);
+
+			var planeGeometry = new THREE.PlaneBufferGeometry( 200, 200 );
+			var planeMaterial = new THREE.MeshStandardMaterial( {
+					map: null,
+					roughnessMap: null,
+					color: 0xffffff,
+					metalness: 0.0,
+					roughness: 0.0					
+			} );
+			
+
+			var planeMesh = new THREE.Mesh( planeGeometry, new THREE.MeshPhongMaterial() );
+			planeMesh.rotation.x = -Math.PI/2;
+			planeMesh.position.y = -2;
+			planeMesh.castShadow = true;
+			planeMesh.receiveShadow = true;
+			scene.add(planeMesh);
+
+            //###################################################
+			// SHADERS
+			//###################################################
+            fxComposer = new THREE.EffectComposer(renderer);
+            fxComposer.renderTarget2.texture.format = fxComposer.renderTarget1.texture.format = THREE.RGBAFormat;
+
+            basicPass = new THREE.RenderPass(scene, camera);
+        
+            var customShader = new THREE.ShaderMaterial({
+                uniforms: {
+                    tDiffuse: { type: "t", value: null}
+                },
+                vertexShader: document.getElementById('vertexShader').textContent,
+                fragmentShader: document.getElementById('fragmentShader').textContent
+            });
+
+            var effectFXAA = new THREE.ShaderPass( THREE.FXAAShader );
+            effectFXAA.renderToScreen = false
+			effectFXAA.uniforms[ 'resolution' ].value.set( 1 / window.innerWidth, 1 / window.innerHeight );
+
+            bloomPass = new THREE.UnrealBloomPass( new THREE.Vector2( window.innerWidth, window.innerHeight ), 3, 0.4, 0.85 ); //1.0, 9, 0.5, 512);
+
+            var customPass = new THREE.ShaderPass(customShader);
+            customPass.renderToScreen = true;
+            
+            fxComposer.addPass(basicPass);
+            //fxComposer.addPass(effectFXAA);
+            fxComposer.addPass(bloomPass);
+            fxComposer.addPass(customPass);
+
+            
+
+            
+			renderer.gammaInput = true;
+			renderer.gammaOutput = true;
+			
+
+			//###################################################
+			// GUI SETUP
+			//###################################################
+			stats = new Stats();
+			document.body.appendChild( stats.domElement );
+			stats.domElement.style.position = 'absolute';
+			stats.domElement.style.left	= '0px';
+			stats.domElement.style.bottom	= '0px';
+			stats.update();
+
+			addGUI();
+
+			//###################################################
+			// EVENTS SETUP
+			//###################################################
+			window.addEventListener( 'resize', onWindowResize, false );
+		}
+
+		function addGUI() {
+			gui = new dat.GUI();
+
+			var controls = new function() {
+				this.metalness = .7;
+				this.roughness = .3;
+                this.bloomStrength = 1.5;
+                this.bloomThreshold = 0.85;
+                this.bloomRadius = 0.4;
+
+				this.updateHDR = function() {
+					hdrMaterial.metalness = controls.metalness;
+					hdrMaterial.roughness = controls.roughness;
+                    bloomPass.strength = controls.bloomStrength;
+                    bloomPass.threshold = controls.bloomThreshold;
+                    bloomPass.radius = controls.bloomRadius;
+				};
+			}
+			
+			gui.add(params, 'envMap', ['LDR', 'HDR']);
+			gui.add(params, 'exposure', 0.1, 2.0);
+			gui.add(controls, "metalness", 0.0, 1.0).onChange(controls.updateHDR);
+			gui.add(controls, "roughness", 0.0, 1.0).onChange(controls.updateHDR);
+            gui.add(controls, "bloomStrength", 0.0, 3.0).onChange(controls.updateHDR);
+            gui.add(controls, "bloomThreshold", 0.0, 1.0).onChange(controls.updateHDR);
+            gui.add(controls, "bloomRadius", 0.0, 1.0).onChange(controls.updateHDR);
+		}
+
+		function createCubeMapUrlsHDR(path, format) {
+			var urls = [
+                path + 'px' + format, 
+                path + 'nx' + format,
+                path + 'py' + format, 
+                path + 'ny' + format,
+                path + 'pz' + format, 
+                path + 'nz' + format
+            ];
+
+			return urls;
+		}
+
+		function createCubeMapTexture(path, format) {
+            var urls = [
+                path + 'px' + format, 
+                path + 'nx' + format,
+                path + 'py' + format, 
+                path + 'ny' + format,
+                path + 'pz' + format, 
+                path + 'nz' + format
+            ];
+            
+            var cubeMap = new THREE.CubeTextureLoader().load(urls);
+            cubeMap.format = THREE.RGBFormat;
+
+            return cubeMap;
+        }
+
+		function onWindowResize() {
+
+			camera.aspect = window.innerWidth / window.innerHeight;
+			camera.updateProjectionMatrix();
+			renderer.setSize( window.innerWidth, window.innerHeight );
+
+		}
+
+		function animate() {
+			switch (params.envMap)
+			{
+				case 'LDR':
+					hdrMaterial.envMap = cubeMap;
+					hdrMaterial.needsUpdate = true;
+					break;
+
+				case 'HDR':
+					if (hdrCubeRenderTarget !== undefined) {
+						hdrMaterial.envMap = hdrCubeRenderTarget.texture;
+						hdrMaterial.needsUpdate = true;
+					}
+					break;
+			}
+			renderer.toneMappingExposure = Math.pow(params.exposure, 4.0 );
+            fxComposer.render();
+			camera_control.update();
+			requestAnimationFrame( animate );
+			stats.update();
+		}
+
+</script>
+</body>
+</html>
