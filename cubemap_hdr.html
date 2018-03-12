@@ -158,7 +158,7 @@
 				planeMaterial.needsUpdate = true;
 			} );
 			
-			hdrMaterial = new THREE.MeshStandardMaterial({color: 0xffffff, metalness: 0.7, roughness: .3, bumpScale: 0.0 });
+			hdrMaterial = new THREE.MeshStandardMaterial({color: 0xffffff, metalness: 0.7, roughness: .3, bumpScale: 0.01 });
 			textureLoader.load('assets/textures/roughness_map.jpg', function(map) {
 				map.wrapS = THREE.RepeatWrapping;
 				map.wrapT = THREE.RepeatWrapping;
